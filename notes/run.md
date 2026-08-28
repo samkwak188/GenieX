@@ -111,18 +111,23 @@ QAIRT models need a `geniex.json` to work. See the [granite4_micro example](http
 
 ### Using a custom QNN library
 
-> [!WARNING]
-> **Testing/validation aid — not a general version-mixing feature.** GenieX's QAIRT plugin
-> is compiled against a specific set of QAIRT headers, and QAIRT is not currently guaranteed
-> to be ABI-stable across versions. Loading a QNN build whose struct layouts, field offsets,
-> or vtables differ can **segfault** on the first changed code path — it will appear to work on
-> unchanged paths and crash on changed ones (see ai-hub-models-internal#3964). Use this to
-> validate a specific candidate QAIRT build before bundling it into a GenieX `.alpha`/RC, not
-> to run against arbitrary installed QAIRT versions in production.
+> [!NOTE]
+> **Forward-compatible, within the negotiated range.** The QAIRT plugin reaches QNN only
+> through the versioned C interface, which negotiates at load time against
+> `QNN_API_VERSION_MINOR <= runtime minor`. One plugin build therefore drives the bundled
+> QAIRT version and newer — measured on Snapdragon X Elite across 2.45 / 2.48 / 2.49 at
+> identical throughput. Pointing at a runtime **older** than the bundled one is the
+> unsupported direction: the negotiation rejects it.
+>
+> This replaces an earlier C++ `IBackend` path where struct layouts and vtables did differ
+> across versions and a mismatch could segfault (ai-hub-models-internal#3964). That hazard
+> is gone with the C API, so this is a supported override rather than a testing-only aid.
+> A mismatched runtime can still produce **wrong output at full speed**, so confirm the
+> `HTP runtime path:` line the plugin logs at INFO names the directory you intended.
 
 By default the QAIRT plugin loads the QNN shared libraries bundled with the GenieX
-release. To validate a different QAIRT/QNN build without reinstalling, point the plugin at
-the library location:
+release. To run against a different QAIRT/QNN build without reinstalling, point the plugin
+at the library location:
 
 ```bash
 # via the CLI flag (qairt models only)

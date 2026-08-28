@@ -20,12 +20,12 @@ add_subdirectory(./src)
 
 # setup install
 #
-# This plugin is built once per QAIRT/QNN version (QAIRT_QNN_VERSION, forwarded
-# to the geniex-qairt subdir above). Each version installs into its own
-# lib/qairt-<ver>/ folder so multiple ABI builds coexist in one SDK; the SDK
-# registry scans these subdirs and the runtime picks the one matching the QAIRT
-# libs passed via --qnn-lib / GENIEX_QNN_LIB. No QNN runtime libs are bundled.
-set(QAIRT_PLUGIN_DIR "lib/qairt-${QAIRT_QNN_VERSION}")
+# One build, one directory. The plugin reaches QNN only through the versioned C
+# interface, which negotiates at load time, so a single binary spans QAIRT
+# versions -- there are no per-ABI variants to install side by side. The plugin
+# also bundles a QAIRT runtime, so --qnn-lib / GENIEX_QNN_LIB is an optional
+# override rather than a requirement.
+set(QAIRT_PLUGIN_DIR "lib/qairt")
 
 set(QAIRT_LIBS geniex_core geniex-proc geniex-proc-vision geniex-proc-audio geniex_vlm)
 foreach(dep IN LISTS QAIRT_LIBS)
@@ -35,3 +35,11 @@ foreach(dep IN LISTS QAIRT_LIBS)
             RUNTIME DESTINATION ${QAIRT_PLUGIN_DIR})
     endif()
 endforeach()
+
+# Install the bundled HTP runtime from the plugin's build tree. Must land in
+# ${QAIRT_PLUGIN_DIR}/htp-files, beside geniex_core: that is exactly where the
+# plugin's resolveHtpPaths() looks when GENIEX_QNN_LIB is unset. Without this the
+# bundled libs never reach the package and every run would need an external SDK.
+install(DIRECTORY "$<TARGET_FILE_DIR:geniex_core>/htp-files/"
+    DESTINATION ${QAIRT_PLUGIN_DIR}/htp-files
+    OPTIONAL)
