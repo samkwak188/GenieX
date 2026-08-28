@@ -566,6 +566,7 @@ bool LlamaVlm::vlm_message_to_common_chat_msg(const geniex_VlmChatMessage* input
     }
 
     output->role = input->role;
+    apply_tool_fields(*output, input->tool_calls, input->tool_call_count, input->tool_call_id, input->tool_name);
 
     if (input->contents && input->content_count > 0) {
         int         media_count = 0;

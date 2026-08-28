@@ -18,6 +18,7 @@
 #define portable_strdup strdup
 #endif
 
+#include "chat_message_utils.h"
 #include "dispatch.h"               // provided by geniex-qairt/models/
 #include "geniex-proc/tokenizer.h"  // ApplyChatTemplateOptions
 #include "geniex-proc/types.h"      // ChatMessage, Role
@@ -153,9 +154,8 @@ int32_t QairtLlm::apply_chat_template(
     }
 
     // Copy the FFI message array into the typed shape the new stateless
-    // applyChatTemplate() expects. Anything not in geniex_LlmChatMessage
-    // (tool_calls, reasoning_content, ...) is left default-empty; extending
-    // the FFI to carry those is its own change.
+    // applyChatTemplate() expects. reasoning_content has no FFI field yet and
+    // stays default-empty.
     std::vector<ChatMessage> messages;
     messages.reserve(static_cast<std::size_t>(input->message_count - start_idx) + 1);
     bool has_system = false;
@@ -180,6 +180,7 @@ int32_t QairtLlm::apply_chat_template(
             return GENIEX_ERROR_COMMON_INVALID_INPUT;
         }
         if (m.content) out.content = m.content;
+        qairt::apply_tool_fields(out, m.tool_calls, m.tool_call_count, m.tool_call_id, m.tool_name);
         messages.push_back(std::move(out));
     }
     if (is_first_turn_ && !has_system) {

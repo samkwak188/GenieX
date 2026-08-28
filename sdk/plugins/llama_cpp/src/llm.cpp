@@ -191,10 +191,17 @@ int32_t LlamaLlm::apply_chat_template(
     common_messages.reserve(input->message_count);
 
     for (int32_t i = 0; i < input->message_count; ++i) {
+        const geniex_LlmChatMessage& src = input->messages[i];
+        if (!src.role) {
+            GENIEX_LOG_ERROR("messages[{}] has null role", i);
+            return GENIEX_ERROR_COMMON_INVALID_INPUT;
+        }
         common_chat_msg msg;
-        msg.role    = input->messages[i].role;
-        msg.content = input->messages[i].content;
-        common_messages.push_back(msg);
+        msg.role = src.role;
+        // An assistant turn that only issues tool calls carries no content.
+        if (src.content) msg.content = src.content;
+        apply_tool_fields(msg, src.tool_calls, src.tool_call_count, src.tool_call_id, src.tool_name);
+        common_messages.push_back(std::move(msg));
     }
 
     // Initialize chat templates
