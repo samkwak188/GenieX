@@ -22,6 +22,32 @@ const (
 
 var errGemma4 = errors.New("gemma4 tool call not match")
 
+type gemma4Format struct{}
+
+func (gemma4Format) Parse(s string) (openai.ChatCompletionMessageFunctionToolCallFunction, error) {
+	return parseToolCallsGemma4(s)
+}
+
+// Boundary stops at the marker, or at a tail that is still only its prefix.
+func (gemma4Format) Boundary(s string) int {
+	if i := strings.Index(s, gemma4ToolCallOpen); i >= 0 {
+		return i
+	}
+	// A partial marker runs to the end of s, so it starts in the last len-1 bytes.
+	for i := max(0, len(s)-len(gemma4ToolCallOpen)+1); i < len(s); i++ {
+		if strings.HasPrefix(gemma4ToolCallOpen, s[i:]) {
+			return i
+		}
+	}
+	return len(s)
+}
+
+// A tail as long as the marker has settled; a shorter one may be a partial
+// marker the next token invalidates.
+func (gemma4Format) StaysHeld(tail int, _ string) bool {
+	return tail >= len(gemma4ToolCallOpen)
+}
+
 // parseToolCallsGemma4 extracts the first `<|tool_call>call:NAME{...}` in resp
 // and returns it with the dict body transcoded to JSON arguments.
 func parseToolCallsGemma4(resp string) (openai.ChatCompletionMessageFunctionToolCallFunction, error) {

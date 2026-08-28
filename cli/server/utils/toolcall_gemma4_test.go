@@ -5,7 +5,7 @@ package utils
 
 import "testing"
 
-func TestParseToolCallsGemma4(t *testing.T) {
+func TestGemma4FormatParse(t *testing.T) {
 	tests := []struct {
 		name      string
 		resp      string
@@ -119,7 +119,7 @@ func TestParseToolCallsGemma4(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseToolCallsGemma4(tt.resp)
+			got, err := gemma4Format{}.Parse(tt.resp)
 			if tt.wantError {
 				if err == nil {
 					t.Fatalf("expected error, got tool call %+v", got)
@@ -139,14 +139,31 @@ func TestParseToolCallsGemma4(t *testing.T) {
 	}
 }
 
-// ParseToolCalls must route gemma4-marked output to the gemma4 parser while
-// leaving JSON output on the generic path.
-func TestParseToolCallsDispatch(t *testing.T) {
-	got, err := ParseToolCalls(`<|tool_call>call:get_weather{city:<|"|>Beijing<|"|>}<tool_call|>`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// Boundary must stop at the marker or a tail that is still only its prefix,
+// and at nothing else — another format's syntax included.
+func TestGemma4FormatBoundary(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want int // -1 means len(s): nothing held
+	}{
+		{"prose", "no marker here", -1},
+		{"marker", `sure <|tool_call>call:f{}`, 5},
+		{"partial marker", "sure <|tool", 5},
+		{"single char marker", "sure <", 5},
+		{"angle bracket mid-text", "a < b and c > d", -1},
+		{"ignores json syntax", `{"name": "f", "arguments": {}}`, -1},
 	}
-	if got.Name != "get_weather" || got.Arguments != `{"city":"Beijing"}` {
-		t.Errorf("gemma4 dispatch failed: %+v", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := tt.want
+			if want < 0 {
+				want = len(tt.s)
+			}
+			if got := (gemma4Format{}).Boundary(tt.s); got != want {
+				t.Errorf("Boundary(%q) = %d, want %d", tt.s, got, want)
+			}
+		})
 	}
 }

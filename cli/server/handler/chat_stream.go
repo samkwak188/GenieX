@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/openai/openai-go/v3"
@@ -115,14 +114,16 @@ func streamPlainText(c *gin.Context, dataCh <-chan string, wait func() error, in
 	})
 }
 
-// Buffers the whole stream, then emits one tool-call chunk (or a content chunk
-// on parse failure).
+// Streams what cannot be part of a tool call, then emits one tool-call chunk
+// (or the unsent tail as content on parse failure).
 func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, includeUsage bool, profile *geniex_sdk.ProfileData) {
-	buffer := strings.Builder{}
+	var scanner utils.ToolCallScanner
 	c.Stream(func(w io.Writer) bool {
 		r, ok := <-dataCh
 		if ok {
-			buffer.WriteString(r)
+			if text := scanner.Push(r); text != "" {
+				c.SSEvent("", contentChunk(text))
+			}
 			return true
 		}
 		// A context window exhausted mid-stream is a normal truncated completion:
@@ -134,11 +135,14 @@ func streamToolCall(c *gin.Context, dataCh <-chan string, wait func() error, inc
 			return false
 		}
 		finishReason := "tool_calls"
-		toolCall, err := utils.ParseToolCalls(buffer.String())
+		tail := scanner.Tail()
+		toolCall, err := utils.ParseToolCalls(tail)
 		if err != nil {
 			slog.Warn("Tool call parse error, fallback to text", "error", err)
 			finishReason = mapFinishReason(profile.StopReason)
-			c.SSEvent("", contentChunk(buffer.String()))
+			if tail != "" {
+				c.SSEvent("", contentChunk(tail))
+			}
 		} else {
 			c.SSEvent("", toolCallChunk(toolCall))
 		}

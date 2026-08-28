@@ -5,6 +5,7 @@ package utils
 
 import "testing"
 
+// ParseToolCalls must route to whichever format carries the call.
 func TestParseToolCalls(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -14,166 +15,20 @@ func TestParseToolCalls(t *testing.T) {
 		wantError bool
 	}{
 		{
-			name:     "bare json object",
+			name:     "json",
 			resp:     `{"name": "get_weather", "arguments": {"city": "Beijing"}}`,
 			wantName: "get_weather",
 			wantArgs: `{"city": "Beijing"}`,
 		},
 		{
-			name:     "json with surrounding prose",
-			resp:     `Sure, let me call it. {"name": "get_weather", "arguments": {"city": "Beijing"}} Done.`,
+			name:     "gemma4",
+			resp:     `<|tool_call>call:get_weather{city:<|"|>Beijing<|"|>}<tool_call|>`,
 			wantName: "get_weather",
-			wantArgs: `{"city": "Beijing"}`,
+			wantArgs: `{"city":"Beijing"}`,
 		},
 		{
-			name:     "string arguments",
-			resp:     `{"name": "echo", "arguments": "hello"}`,
-			wantName: "echo",
-			wantArgs: "hello",
-		},
-		{
-			name:     "nested braces in arguments",
-			resp:     `{"name": "f", "arguments": {"a": {"b": {"c": 1}}}}`,
-			wantName: "f",
-			wantArgs: `{"a": {"b": {"c": 1}}}`,
-		},
-		{
-			name:     "deeply nested arguments",
-			resp:     `prose {"name": "deep", "arguments": {"l1": {"l2": {"l3": {"l4": {"l5": {"v": [1, {"x": 2}]}}}}}}} tail`,
-			wantName: "deep",
-			wantArgs: `{"l1": {"l2": {"l3": {"l4": {"l5": {"v": [1, {"x": 2}]}}}}}}`,
-		},
-		{
-			name:     "nested objects with braces inside strings",
-			resp:     `{"name": "g", "arguments": {"outer": {"inner": {"note": "close } here { and {} there"}}}}`,
-			wantName: "g",
-			wantArgs: `{"outer": {"inner": {"note": "close } here { and {} there"}}}`,
-		},
-		{
-			name:     "array of nested objects as arguments",
-			resp:     `{"name": "batch", "arguments": {"items": [{"a": {"b": 1}}, {"c": {"d": 2}}]}}`,
-			wantName: "batch",
-			wantArgs: `{"items": [{"a": {"b": 1}}, {"c": {"d": 2}}]}`,
-		},
-		{
-			name:     "braces inside string literal ignored",
-			resp:     `{"name": "say", "arguments": {"text": "a } b { c"}}`,
-			wantName: "say",
-			wantArgs: `{"text": "a } b { c"}`,
-		},
-		{
-			name:     "escaped quote inside string",
-			resp:     `{"name": "say", "arguments": {"text": "quote \" and } brace"}}`,
-			wantName: "say",
-			wantArgs: `{"text": "quote \" and } brace"}`,
-		},
-		{
-			name:     "skips leading object without name",
-			resp:     `{"thinking": "hmm"} then {"name": "go", "arguments": {}}`,
-			wantName: "go",
-			wantArgs: `{}`,
-		},
-		{
-			name:     "skips object with name but no arguments",
-			resp:     `{"name": "no_args"} {"name": "real", "arguments": {"x": 1}}`,
-			wantName: "real",
-			wantArgs: `{"x": 1}`,
-		},
-		{
-			name:     "picks first of multiple tool calls",
-			resp:     `{"name": "first", "arguments": {"a": 1}}{"name": "second", "arguments": {"b": 2}}`,
-			wantName: "first",
-			wantArgs: `{"a": 1}`,
-		},
-		{
-			name:     "skips candidate with array arguments",
-			resp:     `{"name": "bad", "arguments": [1, 2, 3]} {"name": "good", "arguments": {"ok": 1}}`,
-			wantName: "good",
-			wantArgs: `{"ok": 1}`,
-		},
-		{
-			name:     "skips candidate with numeric arguments",
-			resp:     `{"name": "bad", "arguments": 42} {"name": "good", "arguments": "text"}`,
-			wantName: "good",
-			wantArgs: "text",
-		},
-		{
-			name:     "skips candidate with non-string name",
-			resp:     `{"name": 7, "arguments": {}} {"name": "good", "arguments": {}}`,
-			wantName: "good",
-			wantArgs: `{}`,
-		},
-		{
-			name:      "all candidates invalid falls through to error",
-			resp:      `{"name": "a", "arguments": [1]} {"name": 2, "arguments": {}} {"name": "c"}`,
-			wantError: true,
-		},
-		{
-			name:     "multiple tool calls separated by prose",
-			resp:     `Call one: {"name": "first", "arguments": {}}. Then: {"name": "second", "arguments": {}}`,
-			wantName: "first",
-			wantArgs: `{}`,
-		},
-		{
-			name:     "leading unterminated brace does not swallow later call",
-			resp:     `reasoning { partial and never closed ... {"name": "go", "arguments": {"ok": true}}`,
-			wantName: "go",
-			wantArgs: `{"ok": true}`,
-		},
-		{
-			name:     "stray closing braces before real call",
-			resp:     `garbage } } more } {"name": "go", "arguments": {}}`,
-			wantName: "go",
-			wantArgs: `{}`,
-		},
-		{
-			name:     "name with escaped chars",
-			resp:     `{"name": "ns\\tool", "arguments": {"path": "C:\\tmp"}}`,
-			wantName: `ns\tool`,
-			wantArgs: `{"path": "C:\\tmp"}`,
-		},
-		{
-			name:     "empty object skipped then real call",
-			resp:     `{} {"name": "go", "arguments": {}}`,
-			wantName: "go",
-			wantArgs: `{}`,
-		},
-		{
-			// tag/fence wrappers are transparent: the inner object is extracted
-			name:     "json inside tool_call tag",
-			resp:     "<tool_call>\n{\"name\": \"tagged\", \"arguments\": {\"k\": 1}}\n</tool_call>",
-			wantName: "tagged",
-			wantArgs: `{"k": 1}`,
-		},
-		{
-			name:     "json inside code fence",
-			resp:     "here you go:\n```json\n{\"name\": \"fenced\", \"arguments\": {\"q\": \"x\"}}\n```",
-			wantName: "fenced",
-			wantArgs: `{"q": "x"}`,
-		},
-		{
-			name:      "no json object",
+			name:      "no format matches",
 			resp:      "just some plain text without any call",
-			wantError: true,
-		},
-		{
-			name:      "unterminated object",
-			resp:      `{"name": "go", "arguments":`,
-			wantError: true,
-		},
-		{
-			name:      "only non-tool-call objects",
-			resp:      `{"foo": 1} {"bar": 2} {"name": 42}`,
-			wantError: true,
-		},
-		{
-			name:      "empty string",
-			resp:      "",
-			wantError: true,
-		},
-		{
-			name:      "braces only inside a string literal",
-			resp:      `the model said "{ not json }" and stopped`,
 			wantError: true,
 		},
 	}
@@ -197,5 +52,104 @@ func TestParseToolCalls(t *testing.T) {
 				t.Errorf("arguments = %q, want %q", got.Arguments, tt.wantArgs)
 			}
 		})
+	}
+}
+
+// toolCallBoundary must report the earliest boundary any format sees, so the
+// per-format cases live in the format tests and these cover the aggregation.
+func TestToolCallBoundary(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want int // -1 means len(s): nothing held
+	}{
+		{name: "empty", s: "", want: -1},
+		{name: "prose only", s: "Sure, here is the answer.", want: -1},
+		{name: "json alone", s: `hi {"name": "f", "arguments": {}}`, want: 3},
+		{name: "gemma4 alone", s: "sure <|tool_call>call:f{}", want: 5},
+		{name: "json earlier than gemma4", s: `x {"name": "g", "arguments": {}} y <|tool_call>call:f{}`, want: 2},
+		{name: "gemma4 earlier than json", s: `x <|tool_call>call:f{} y {"name": "g", "arguments": {}}`, want: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := tt.want
+			if want < 0 {
+				want = len(tt.s)
+			}
+			if got := toolCallBoundary(tt.s); got != want {
+				t.Errorf("toolCallBoundary(%q) = %d, want %d", tt.s, got, want)
+			}
+		})
+	}
+}
+
+// Feeding rune by rune must emit every byte once and leave a parsable tail.
+func TestToolCallScanner(t *testing.T) {
+	responses := []string{
+		"just prose, no tool call at all",
+		`prose then {"name": "f", "arguments": {"a": 1}} tail`,
+		`{"name": "f", "arguments": {"a": 1}}`,
+		`{"foo": 1} noise {"name": "f", "arguments": {"a": 1}}`,
+		`talk <|tool_call>call:f{a:<|"|>b<|"|>}<tool_call|>`,
+		`a } b { c unbalanced`,
+	}
+
+	for _, resp := range responses {
+		t.Run(resp, func(t *testing.T) {
+			var scanner ToolCallScanner
+			var emitted string
+			for _, r := range resp {
+				emitted += scanner.Push(string(r))
+			}
+			tail := scanner.Tail()
+			if emitted+tail != resp {
+				t.Fatalf("emitted+tail = %q, want %q", emitted+tail, resp)
+			}
+
+			wantCall, wantErr := ParseToolCalls(resp)
+			gotCall, gotErr := ParseToolCalls(tail)
+			if (wantErr == nil) != (gotErr == nil) {
+				t.Fatalf("tail parse error = %v, whole parse error = %v", gotErr, wantErr)
+			}
+			if gotCall.Name != wantCall.Name || gotCall.Arguments != wantCall.Arguments {
+				t.Errorf("tail parsed %+v, whole parsed %+v", gotCall, wantCall)
+			}
+		})
+	}
+}
+
+// Any split of a response must yield the same emitted text and tail. This is
+// what guards StaysHeld: a format skipping a rescan it should not stalls here.
+func TestToolCallScannerChunkSizes(t *testing.T) {
+	responses := []string{
+		`prose then {"name": "f", "arguments": {"a": {"b": 1}}} tail`,
+		`talk <|tool_call>call:f{a:<|"|>b<|"|>}<tool_call|>`,
+		`{"foo": 1} noise {"name": "f", "arguments": {}}`,
+		`a { b } c { d } e`,
+		// A '<' that does not open a marker must not stall the stream.
+		`prose <think>more prose, no closing brace anywhere`,
+		`prose <think>more prose, then a } brace`,
+		`a <b <c <|too <|tool_ nothing here opens a marker`,
+		`ends on a bare marker prefix <|tool`,
+	}
+
+	for _, resp := range responses {
+		for _, size := range []int{1, 2, 3, 5, 17, len(resp)} {
+			var scanner ToolCallScanner
+			var emitted string
+			for i := 0; i < len(resp); i += size {
+				end := min(i+size, len(resp))
+				emitted += scanner.Push(resp[i:end])
+			}
+			tail := scanner.Tail()
+			if emitted+tail != resp {
+				t.Errorf("size %d: emitted+tail = %q, want %q", size, emitted+tail, resp)
+			}
+			// The tail must start where the whole-response boundary says it does.
+			if want := toolCallBoundary(resp); len(emitted) != want {
+				t.Errorf("size %d: emitted %d bytes, boundary says %d", size, len(emitted), want)
+			}
+		}
 	}
 }
